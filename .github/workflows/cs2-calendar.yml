@@ -62,11 +62,11 @@ jobs:
           print("Cache MSAL descriptografado.")
           PY
 
-      - name: Synchronize CS2 matches
+          - name: Synchronize CS2 matches
         env:
           CITO_API_KEY: ${{ secrets.CITO_API_KEY }}
           MS_CLIENT_ID: ${{ secrets.MS_CLIENT_ID }}
-        run: python sync_matches.py
+        run: python cs2-match-calendar/sync_matches.py
 
       - name: Encrypt updated MSAL cache
         if: always()
