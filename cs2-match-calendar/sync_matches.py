@@ -94,12 +94,36 @@ def get_upcoming_matches(api_key):
     return selected
 
 
+
 def authenticate_outlook(client_id):
+    cache = msal.SerializableTokenCache()
+    cache_file = "token_cache.json"
+
+    # Carrega o cache salvo em execuções anteriores.
+    if os.path.exists(cache_file):
+        with open(cache_file, "r", encoding="utf-8") as file:
+            cache.deserialize(file.read())
+
     app = msal.PublicClientApplication(
         client_id=client_id,
         authority="https://login.microsoftonline.com/consumers",
+        token_cache=cache,
     )
 
+    # Tenta obter um token sem pedir novo login.
+    accounts = app.get_accounts()
+
+    if accounts:
+        result = app.acquire_token_silent(
+            scopes=SCOPES,
+            account=accounts[0],
+        )
+
+        if result and "access_token" in result:
+            print("Autenticação realizada usando o cache.")
+            return result["access_token"]
+
+    # Se não houver token utilizável, solicita autenticação.
     flow = app.initiate_device_flow(scopes=SCOPES)
 
     if "user_code" not in flow:
@@ -118,7 +142,14 @@ def authenticate_outlook(client_id):
             + result.get("error_description", "Tente novamente.")
         )
 
+    # Persiste o cache para as próximas execuções.
+    if cache.has_state_changed:
+        with open(cache_file, "w", encoding="utf-8") as file:
+            file.write(cache.serialize())
+
+    print("Autenticação realizada e cache salvo.")
     return result["access_token"]
+
 
 
 
