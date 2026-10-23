@@ -1,0 +1,98 @@
+
+name: CS2 Match Calendar
+
+on:
+  schedule:
+    - cron: "17 */12 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests msal cryptography
+
+      - name: Restore encrypted MSAL cache
+        id: restore-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: msal_cache.enc
+          key: msal-cache-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            msal-cache-
+
+      - name: Decrypt MSAL cache
+        env:
+          MSAL_ENCRYPTION_KEY: ${{ secrets.MSAL_ENCRYPTION_KEY }}
+          MSAL_INITIAL_CACHE: ${{ secrets.MSAL_INITIAL_CACHE }}
+        run: |
+          python - <<'PY'
+          import os
+          import base64
+          from pathlib import Path
+          from cryptography.fernet import Fernet
+
+          key = os.environ["MSAL_ENCRYPTION_KEY"].encode()
+          cache_file = Path("msal_cache.enc")
+
+          if not cache_file.exists():
+              initial = os.environ.get("MSAL_INITIAL_CACHE", "")
+              if not initial:
+                  raise SystemExit("Cache inicial não configurado.")
+              cache_file.write_bytes(base64.b64decode(initial))
+
+          encrypted = cache_file.read_bytes()
+          token_cache = Fernet(key).decrypt(encrypted)
+          Path("token_cache.json").write_bytes(token_cache)
+          print("Cache MSAL descriptografado.")
+          PY
+
+      - name: Synchronize CS2 matches
+        env:
+          CITO_API_KEY: ${{ secrets.CITO_API_KEY }}
+          MS_CLIENT_ID: ${{ secrets.MS_CLIENT_ID }}
+        run: python sync_matches.py
+
+      - name: Encrypt updated MSAL cache
+        if: always()
+        env:
+          MSAL_ENCRYPTION_KEY: ${{ secrets.MSAL_ENCRYPTION_KEY }}
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          from cryptography.fernet import Fernet
+
+          cache_file = Path("token_cache.json")
+          if not cache_file.exists():
+              print("Cache MSAL não encontrado; nada para salvar.")
+              raise SystemExit(0)
+
+          key = os.environ["MSAL_ENCRYPTION_KEY"].encode()
+          encrypted = Fernet(key).encrypt(cache_file.read_bytes())
+          Path("msal_cache.enc").write_bytes(encrypted)
+          cache_file.unlink()
+          print("Cache MSAL criptografado.")
+          PY
+
+      - name: Save encrypted MSAL cache
+        if: always() && hashFiles('msal_cache.enc') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: msal_cache.enc
+          key: msal-cache-${{ github.run_id }}-${{ github.run_attempt }}
