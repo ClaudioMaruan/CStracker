@@ -62,7 +62,7 @@ jobs:
           print("Cache MSAL descriptografado.")
           PY
 
-          - name: Synchronize CS2 matches
+      - name: Synchronize CS2 matches
         env:
           CITO_API_KEY: ${{ secrets.CITO_API_KEY }}
           MS_CLIENT_ID: ${{ secrets.MS_CLIENT_ID }}
